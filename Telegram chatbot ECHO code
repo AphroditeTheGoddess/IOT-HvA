@@ -1,0 +1,115 @@
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <UniversalTelegramBot.h>
+#include <Adafruit_NeoPixel.h>
+
+#define PIN        21 // Pin for NeoPixel
+#define NUMPIXELS 12  // Number of NeoPixels in the led strip
+#define WIFI_SSID "wifi SSID"
+#define WIFI_PASSWORD "Password"
+// Telegram BOT Token (Get from Botfather)
+#define BOT_TOKEN "your API key"
+
+const unsigned long BOT_MTBS = 1000; // mean time between scan messages
+const int DELAYVAL = 200; // Time (in milliseconds) to pause between pixels
+
+WiFiClientSecure secured_client;
+UniversalTelegramBot bot(BOT_TOKEN, secured_client);
+unsigned long bot_lasttime; // last time messages' scan has been done
+
+Adafruit_NeoPixel pixels(NUMPIXELS, PIN, NEO_GRB + NEO_KHZ800);
+
+void handleNewMessages(int numNewMessages)
+{
+  for (int i = 0; i < numNewMessages; i++)
+  {
+    String messageText = bot.messages[i].text;
+    String chatId = bot.messages[i].chat_id; // Leave as String
+
+    Serial.println(messageText);
+
+    // Respond to "light on" command
+    if (messageText.equalsIgnoreCase("light on")) {
+      pixels.clear(); // Set all pixel colors to 'off'
+      for (int j = 0; j < NUMPIXELS; j++) { // Flash the NeoPixel strip
+        pixels.setPixelColor(j, pixels.Color(0, 150, 0)); // Set color to green
+      }
+      pixels.show();   // Send the updated pixel colors to the hardware.
+      delay(500); // Keep the lights on for half a second
+      pixels.clear(); // Turn off the pixels
+      pixels.show();   // Update the strip
+      bot.sendMessage(chatId, "LED strip is ON!", ""); // Confirm message
+
+    // Respond to "party" command
+    } else if (messageText.equalsIgnoreCase("party")) {
+      bot.sendMessage(chatId, "Party mode activated!", "");
+      for (int p = 0; p < 30; p++) { // Loop to simulate party lights
+        for (int j = 0; j < NUMPIXELS; j++) {
+          // Randomly change each pixel's color
+          pixels.setPixelColor(j, pixels.Color(random(0, 255), random(0, 255), random(0, 255)));
+        }
+        pixels.show(); // Update the pixels
+        delay(100);    // Short delay for party effect
+      }
+      pixels.clear(); // Turn off the lights after party
+      pixels.show();
+
+    } else {
+      // Echo the received message
+      bot.sendMessage(chatId, messageText, "");
+      Serial.println("Message echoed back.");
+    }
+  }
+}
+
+void setup()
+{
+  pixels.begin(); // Initialize NeoPixel strip object
+  Serial.begin(115200);
+  Serial.println();
+
+  // Connect to Wifi
+  Serial.print("Connecting to Wifi SSID ");
+  Serial.print(WIFI_SSID);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  secured_client.setCACert(TELEGRAM_CERTIFICATE_ROOT); // Add root certificate for api.telegram.org
+  while (WiFi.status() != WL_CONNECTED)
+  {
+    Serial.print(".");
+    delay(500);
+  }
+  Serial.print("\nWiFi connected. IP address: ");
+  Serial.println(WiFi.localIP());
+
+  // Retrieve time
+  Serial.print("Retrieving time: ");
+  configTime(0, 0, "pool.ntp.org"); // get UTC time via NTP
+  time_t now = time(nullptr);
+  while (now < 24 * 3600)
+  {
+    Serial.print(".");
+    delay(100);
+    now = time(nullptr);
+  }
+  Serial.println(now);
+}
+
+void loop()
+{
+  if (millis() - bot_lasttime > BOT_MTBS)
+  {
+    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+
+    while (numNewMessages)
+    {
+      Serial.println("got response");
+      handleNewMessages(numNewMessages);
+      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    }
+
+    bot_lasttime = millis();
+  }
+}
+14:54
+
+
