@@ -1,1 +1,126 @@
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <UniversalTelegramBot.h>
+#include <AccelStepper.h>
+#include <TFT_eSPI.h> // Include the TFT_eSPI library
+
+// Define your WiFi credentials and Telegram Bot Token
+const char* ssid = "SSID"; // Replace with your SSID
+const char* password = "Password"; // Replace with your WiFi password
+const char* botToken = "TELEGRAM API KEY"; // Replace with your Bot Token
+
+// Create a WiFiClientSecure object
+WiFiClientSecure secured_client;
+UniversalTelegramBot bot(botToken, secured_client);
+
+#define FULLSTEP 4
+#define STEP_PER_REVOLUTION 2048 // This value is from the datasheet
+
+// Pins for the stepper motor driver
+AccelStepper stepper(FULLSTEP, 38, 39, 32, 33); // ESP32 pins: GPIO38, GPIO39, GPIO32, GPIO33
+
+// Initialize TFT display
+TFT_eSPI tft = TFT_eSPI(); // Create TFT object
+unsigned long bot_lasttime; // last time messages' scan has been done
+const unsigned long BOT_MTBS = 1000; // mean time between scan messages
+
+void setup() {
+  Serial.begin(115200);
+  
+  // Initialize TFT
+  tft.init();
+  tft.setRotation(1); // Set orientation
+  tft.fillScreen(TFT_BLACK); // Clear screen
+  tft.setTextColor(TFT_WHITE);
+  tft.setTextSize(2);
+
+  // Connect to WiFi
+  WiFi.begin(ssid, password);
+  secured_client.setCACert(TELEGRAM_CERTIFICATE_ROOT); // Add root certificate for api.telegram.org
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(1000);
+    Serial.print("Connecting to WiFi...");
+    tft.fillScreen(TFT_BLACK);
+    tft.setCursor(0, 0);
+    tft.println("Connecting to WiFi...");
+  }
+  Serial.println("Connected to WiFi");
+  tft.fillScreen(TFT_BLACK);
+  tft.setCursor(0, 0);
+  tft.println("Connected to WiFi");
+  
+  stepper.setMaxSpeed(200.0);   // Set the maximum speed
+  stepper.setAcceleration(10.0); // Set acceleration
+  stepper.setCurrentPosition(0); // Set position
+}
+
+void handleNewMessages(int numNewMessages) {
+  for (int i = 0; i < numNewMessages; i++) {
+    String messageText = bot.messages[i].text;
+    String chatId = bot.messages[i].chat_id; // Leave as String
+    Serial.println(messageText);
+    
+    // Display message on TFT
+    tft.fillScreen(TFT_BLACK); // Clear the screen before printing new message
+    tft.setCursor(0, 0);
+    tft.println("Received:");
+    tft.println(messageText);
+
+    String response; // To store the response message
+
+    if (messageText.equalsIgnoreCase("clockwise")) {
+      Serial.println("Moving clockwise");
+      response = "Moving clockwise...";
+      tft.setCursor(0, 60);
+      tft.println(response);
+      
+      stepper.moveTo(STEP_PER_REVOLUTION); // Move to position for one full revolution
+      while (stepper.distanceToGo() != 0) {
+        stepper.run(); // Update the stepper position
+        delay(5); // Short delay for stability
+      }
+      response = "Motor moved clockwise.";
+      bot.sendMessage(chatId, response, ""); // Send response to Telegram
+      Serial.println(response);
+    } 
+    else if (messageText.equalsIgnoreCase("counterclockwise")) {
+      Serial.println("Moving counterclockwise");
+      response = "Moving counterclockwise...";
+      tft.setCursor(0, 60);
+      tft.println(response);
+      
+      stepper.moveTo(-STEP_PER_REVOLUTION); // Move to position for one full revolution in reverse
+      while (stepper.distanceToGo() != 0) {
+        stepper.run(); // Update the stepper position
+        delay(5); // Short delay for stability
+      }
+      response = "Motor moved counterclockwise.";
+      bot.sendMessage(chatId, response, ""); // Send response to Telegram
+      Serial.println(response);
+    } 
+    else {
+      // Echo the received message
+      bot.sendMessage(chatId, messageText, "");
+      Serial.println("Message echoed back.");
+    }
+
+    // Optionally, display the response on TFT
+    tft.setCursor(0, 100);
+    tft.println(response);
+  }
+}
+
+void loop() {
+  if (millis() - bot_lasttime > BOT_MTBS) {
+    int numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    
+    while (numNewMessages) {
+      Serial.println("Got response");
+      handleNewMessages(numNewMessages);
+      numNewMessages = bot.getUpdates(bot.last_message_received + 1);
+    }
+
+    bot_lasttime = millis();
+  }
+}
 
